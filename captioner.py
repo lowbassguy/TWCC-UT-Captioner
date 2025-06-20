@@ -283,6 +283,63 @@ class SecureSettings:
             print(f"❌ [SETTINGS] Error loading API key: {e}")
             return None
 
+    def save_ui_preferences(self, bg_color, text_color, font_size, language):
+        """
+        Save UI preferences to local file.
+        
+        Args:
+            bg_color (str): Background color selection
+            text_color (str): Text color selection  
+            font_size (int): Font size value
+            language (str): Selected language
+            
+        Returns:
+            bool: True if successful, False if error occurred
+        """
+        try:
+            ui_settings_file = os.path.join(self.settings_dir, "ui_preferences.json")
+            
+            preferences = {
+                "background_color": bg_color,
+                "text_color": text_color,
+                "font_size": font_size,
+                "language": language
+            }
+            
+            with open(ui_settings_file, 'w') as f:
+                json.dump(preferences, f, indent=2)
+            
+            print("💾 [SETTINGS] UI preferences saved")
+            return True
+            
+        except Exception as e:
+            print(f"❌ [SETTINGS] Error saving UI preferences: {e}")
+            return False
+
+    def load_ui_preferences(self):
+        """
+        Load UI preferences from local file.
+        
+        Returns:
+            dict: Dictionary with UI preference values, or None if not found/error
+        """
+        try:
+            ui_settings_file = os.path.join(self.settings_dir, "ui_preferences.json")
+            
+            if not os.path.exists(ui_settings_file):
+                print("📂 [SETTINGS] No UI preferences file found - using defaults")
+                return None
+                
+            with open(ui_settings_file, 'r') as f:
+                preferences = json.load(f)
+            
+            print("🔓 [SETTINGS] UI preferences loaded successfully")
+            return preferences
+            
+        except Exception as e:
+            print(f"❌ [SETTINGS] Error loading UI preferences: {e}")
+            return None
+
 class SubtitleApp:
     """
     Main application class for the TWCC Universal Translator.
@@ -402,6 +459,9 @@ class SubtitleApp:
         print("🖼️ [INIT] Setting up UI 🎨")
         self.setup_ui()
         
+        # Load and apply saved UI preferences
+        self.load_ui_preferences()
+        
         # Start background processing threads
         print("🔁 [INIT] Starting update_text_loop thread ⏩")
         # UI update thread - monitors text queue and updates display
@@ -489,6 +549,7 @@ class SubtitleApp:
         language_menu = ttk.Combobox(control_frame, textvariable=self.selected_language, 
                                     values=list(self.languages.keys()), width=20)
         language_menu.grid(row=0, column=1, padx=5)
+        language_menu.bind('<<ComboboxSelected>>', self.on_language_changed)
         
         # Recording start/stop button
         self.record_button = ttk.Button(control_frame, text="Start Recording", 
@@ -504,18 +565,27 @@ class SubtitleApp:
         bg_menu.grid(row=0, column=4, padx=5)
         bg_menu.bind('<<ComboboxSelected>>', self.update_background)
         
+        # Text color selection for subtitle display
+        ttk.Label(control_frame, text="Text:").grid(row=0, column=5, padx=5)
+        self.text_color = tk.StringVar(value="white")
+        text_colors = ["white", "yellow", "cyan", "red", "green", "orange", "pink"]  # High contrast colors
+        text_menu = ttk.Combobox(control_frame, textvariable=self.text_color, 
+                                values=text_colors, width=10)
+        text_menu.grid(row=0, column=6, padx=5)
+        text_menu.bind('<<ComboboxSelected>>', self.update_text_color)
+        
         # Font size adjustment for subtitle readability
-        ttk.Label(control_frame, text="Font Size:").grid(row=0, column=5, padx=5)
+        ttk.Label(control_frame, text="Font Size:").grid(row=0, column=7, padx=5)
         self.font_size = tk.IntVar(value=24)  # Default size good for streaming
         font_spinner = ttk.Spinbox(control_frame, from_=12, to=48, 
                                   textvariable=self.font_size, width=10,
                                   command=self.update_font)
-        font_spinner.grid(row=0, column=6, padx=5)
+        font_spinner.grid(row=0, column=8, padx=5)
         
         # Settings button for API key configuration
         settings_button = ttk.Button(control_frame, text="Settings", 
                                    command=self.show_settings_dialog)
-        settings_button.grid(row=0, column=7, padx=5)
+        settings_button.grid(row=0, column=9, padx=5)
         
         # Main subtitle display area
         self.text_frame = tk.Frame(self.root, bg="black", height=150)
@@ -554,6 +624,21 @@ class SubtitleApp:
         print(f"🌈 [UI] Background color changed to: {color}")
         self.text_frame.configure(bg=color)
         self.text_label.configure(bg=color)
+        # Save preferences when changed
+        self.save_ui_preferences()
+
+    def update_text_color(self, event=None):
+        """
+        Update the text color of the subtitle display.
+        
+        Called when user selects a different text color from the dropdown.
+        Updates the foreground color of the subtitle text.
+        """
+        color = self.text_color.get()
+        print(f"🎨 [UI] Text color changed to: {color}")
+        self.text_label.configure(fg=color)
+        # Save preferences when changed
+        self.save_ui_preferences()
 
     def update_font(self):
         """
@@ -564,6 +649,52 @@ class SubtitleApp:
         """
         print(f"🔠 [UI] Font size changed to: {self.font_size.get()} px")
         self.subtitle_font.configure(size=self.font_size.get())
+        # Save preferences when changed
+        self.save_ui_preferences()
+
+    def on_language_changed(self, event=None):
+        """
+        Handle language selection changes.
+        
+        Called when user selects a different language from the dropdown.
+        Saves the preference immediately.
+        """
+        print(f"🌍 [UI] Language changed to: {self.selected_language.get()}")
+        # Save preferences when changed
+        self.save_ui_preferences()
+
+    def save_ui_preferences(self):
+        """
+        Save current UI preferences to settings file.
+        """
+        self.settings.save_ui_preferences(
+            bg_color=self.bg_color.get(),
+            text_color=self.text_color.get(),
+            font_size=self.font_size.get(),
+            language=self.selected_language.get()
+        )
+
+    def load_ui_preferences(self):
+        """
+        Load and apply saved UI preferences.
+        
+        Called during app initialization to restore previous settings.
+        """
+        preferences = self.settings.load_ui_preferences()
+        
+        if preferences:
+            # Apply loaded preferences
+            self.bg_color.set(preferences.get("background_color", "black"))
+            self.text_color.set(preferences.get("text_color", "white"))
+            self.font_size.set(preferences.get("font_size", 24))
+            self.selected_language.set(preferences.get("language", "English"))
+            
+            # Update UI appearance with loaded settings
+            self.update_background()
+            self.update_text_color()
+            self.update_font()
+            
+            print(f"✅ [SETTINGS] Applied saved preferences: {preferences.get('background_color')} bg, {preferences.get('text_color')} text, {preferences.get('font_size')}px, {preferences.get('language')}")
 
     def toggle_recording(self):
         """
