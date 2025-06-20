@@ -192,3 +192,7 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# TWCC Captioner - Expense Reports
+#  Contains sensitive financial/usage data and should not be committed to version control
+expense_reports/

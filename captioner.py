@@ -363,6 +363,16 @@ class SubtitleApp:
         # Application state
         self.is_recording = False  # Recording state flag
         
+        # Token usage tracking for cost estimation
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_cost = 0.0
+        self.session_translations = 0
+        
+        # Session tracking for reporting
+        self.session_start_time = None
+        self.session_end_time = None
+        
         # Supported languages for translation
         # Dictionary maps display names to language codes for OpenAI API
         self.languages = {
@@ -573,14 +583,24 @@ class SubtitleApp:
         Start the audio recording and processing pipeline.
         
         Process:
-        1. Update UI state (button text, status message)
-        2. Set recording flag to True
-        3. Start background recording thread
+        1. Reset session counters and start tracking
+        2. Update UI state (button text, status message)
+        3. Set recording flag to True
+        4. Start background recording thread
         
         The recording thread will continuously capture audio chunks
         and submit them for processing until stopped.
         """
         print("▶️ [RECORD] Start recording pressed")
+        
+        # Reset session tracking for new session
+        self.session_start_time = time.time()
+        self.total_input_tokens = 0
+        self.total_output_tokens = 0
+        self.total_cost = 0.0
+        self.session_translations = 0
+        print(f"📊 [SESSION] New session started at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
         self.is_recording = True
         self.record_button.configure(text="Stop Recording")
         self.text_label.configure(text="Listening...")
@@ -595,12 +615,19 @@ class SubtitleApp:
         
         Process:
         1. Set recording flag to False (signals recording thread to stop)
-        2. Update UI state (button text, status message)
+        2. Generate end-of-session report
+        3. Update UI state (button text, status message)
         
         The recording thread will finish its current chunk and then exit.
         """
         print("⏹️ [RECORD] Stop recording pressed")
         self.is_recording = False
+        
+        # Record session end time and generate report
+        self.session_end_time = time.time()
+        print(f"📊 [SESSION] Session ended at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+        self.generate_session_report()
+        
         self.record_button.configure(text="Start Recording")
         self.text_label.configure(text="Recording stopped.")
 
@@ -837,12 +864,142 @@ class SubtitleApp:
             )
             
             result_text = response.choices[0].message.content.strip()
+            
+            # Log token usage and calculate costs
+            self.log_token_usage(response)
+            
             print(f"💌 [TRANSLATE] Received translation: '{result_text}'")
             return result_text
             
         except Exception as e:
             print(f"❗Error in formatting/translation: {e}")
             return text  # Return original text if translation fails
+
+    def log_token_usage(self, response):
+        """
+        Log token usage and calculate cost estimation for OpenAI API calls.
+        
+        Args:
+            response: OpenAI API response object containing usage statistics
+            
+        GPT-4.1 nano pricing (per 1M tokens):
+        - Input tokens: $0.10
+        - Output tokens: $0.40
+        - Cached input: $0.025 (not tracked separately for simplicity)
+        """
+        try:
+            # Extract token usage from API response
+            usage = response.usage
+            input_tokens = usage.prompt_tokens
+            output_tokens = usage.completion_tokens
+            total_tokens = usage.total_tokens
+            
+            # Calculate costs (convert from per-million to per-token rates)
+            input_cost = (input_tokens / 1_000_000) * 0.10  # $0.10 per 1M input tokens
+            output_cost = (output_tokens / 1_000_000) * 0.40  # $0.40 per 1M output tokens
+            total_cost = input_cost + output_cost
+            
+            # Update session totals
+            self.total_input_tokens += input_tokens
+            self.total_output_tokens += output_tokens
+            self.total_cost += total_cost
+            self.session_translations += 1
+            
+            # Log current API call details
+            print(f"💰 [COST] Translation #{self.session_translations}")
+            print(f"💰 [COST] Input: {input_tokens} tokens (${input_cost:.6f})")
+            print(f"💰 [COST] Output: {output_tokens} tokens (${output_cost:.6f})")
+            print(f"💰 [COST] This call: ${total_cost:.6f}")
+            
+            # Log session totals
+            print(f"💰 [COST] === SESSION TOTALS ===")
+            print(f"💰 [COST] Total translations: {self.session_translations}")
+            print(f"💰 [COST] Total input tokens: {self.total_input_tokens:,}")
+            print(f"💰 [COST] Total output tokens: {self.total_output_tokens:,}")
+            print(f"💰 [COST] Total session cost: ${self.total_cost:.6f}")
+            
+            # Cost per translation average
+            avg_cost = self.total_cost / self.session_translations if self.session_translations > 0 else 0
+            print(f"💰 [COST] Average cost per translation: ${avg_cost:.6f}")
+            print(f"💰 [COST] ========================")
+            
+        except Exception as e:
+            print(f"❗Error logging token usage: {e}")
+
+    def generate_session_report(self):
+        """
+        Generate and save a detailed session report to file.
+        
+        Creates a timestamped text file with comprehensive session statistics
+        including duration, token usage, costs, and efficiency metrics.
+        """
+        try:
+            # Skip report generation if no session data
+            if self.session_start_time is None or self.session_end_time is None:
+                print("⚠️ [SESSION] No session data available for report generation")
+                return
+            
+            # Calculate session duration
+            duration_seconds = self.session_end_time - self.session_start_time
+            duration_minutes = duration_seconds / 60
+            duration_str = f"{int(duration_minutes)} minutes {int(duration_seconds % 60)} seconds"
+            
+            # Create expense reports directory if it doesn't exist
+            reports_dir = "expense_reports"
+            if not os.path.exists(reports_dir):
+                os.makedirs(reports_dir)
+                print(f"📁 [SESSION] Created expense reports directory: {reports_dir}")
+            
+            # Generate timestamp for filename
+            timestamp = time.strftime('%Y-%m-%d_%H-%M-%S', time.localtime(self.session_start_time))
+            filename = os.path.join(reports_dir, f"session_report_{timestamp}.txt")
+            
+            # Calculate efficiency metrics
+            translations_per_minute = self.session_translations / duration_minutes if duration_minutes > 0 else 0
+            avg_tokens_per_translation = (self.total_input_tokens + self.total_output_tokens) / self.session_translations if self.session_translations > 0 else 0
+            cost_per_minute = self.total_cost / duration_minutes if duration_minutes > 0 else 0
+            projected_hourly_cost = cost_per_minute * 60
+            
+            # Generate report content
+            report_content = f"""=== TWCC Translation Session Report ===
+Session Date: {time.strftime('%Y-%m-%d', time.localtime(self.session_start_time))}
+Start Time: {time.strftime('%H:%M:%S', time.localtime(self.session_start_time))}
+End Time: {time.strftime('%H:%M:%S', time.localtime(self.session_end_time))}
+Duration: {duration_str}
+
+TRANSLATION STATS:
+- Total Translations: {self.session_translations}
+- Target Language: {self.selected_language.get()}
+- Translations per minute: {translations_per_minute:.1f}
+
+TOKEN USAGE:
+- Total Input Tokens: {self.total_input_tokens:,}
+- Total Output Tokens: {self.total_output_tokens:,}
+- Total Tokens: {(self.total_input_tokens + self.total_output_tokens):,}
+
+COST BREAKDOWN:
+- Input Cost: ${(self.total_input_tokens / 1_000_000) * 0.10:.6f}
+- Output Cost: ${(self.total_output_tokens / 1_000_000) * 0.40:.6f}
+- Total Session Cost: ${self.total_cost:.6f}
+- Average Cost per Translation: ${(self.total_cost / self.session_translations if self.session_translations > 0 else 0):.6f}
+
+EFFICIENCY METRICS:
+- Tokens per translation (avg): {avg_tokens_per_translation:.1f}
+- Cost per minute: ${cost_per_minute:.6f}
+- Projected hourly cost: ${projected_hourly_cost:.6f}
+
+=== End of Report ===
+"""
+            
+            # Write report to file
+            with open(filename, 'w', encoding='utf-8') as f:
+                f.write(report_content)
+            
+            print(f"📄 [SESSION] Session report saved to: {filename}")
+            print(f"📊 [SESSION] Summary: {self.session_translations} translations, ${self.total_cost:.6f} total cost")
+            
+        except Exception as e:
+            print(f"❗Error generating session report: {e}")
 
     def update_text_loop(self):
         """
