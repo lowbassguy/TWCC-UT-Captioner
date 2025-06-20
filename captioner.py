@@ -686,11 +686,12 @@ class SubtitleApp:
             frames: List of audio data chunks from microphone
             
         Process:
-        1. Create temporary WAV file from audio frames
-        2. Run Whisper transcription on the audio file
-        3. Extract text from transcription result
-        4. Submit text for translation (if any text was detected)
-        5. Clean up temporary file
+        1. Check audio level for voice activity detection
+        2. Create temporary WAV file from audio frames
+        3. Run Whisper transcription on the audio file
+        4. Extract text from transcription result
+        5. Submit text for translation (if any text was detected)
+        6. Clean up temporary file
         
         This method runs in the thread pool to avoid blocking other operations.
         """
@@ -699,6 +700,23 @@ class SubtitleApp:
         # Check if Whisper model is available
         if self.whisper_model is None:
             print("❌ [AUDIO] Whisper model not available. Skipping transcription.")
+            return
+        
+        # Voice Activity Detection - check if audio has sufficient volume
+        # Convert audio frames to numpy array for analysis
+        audio_data = np.frombuffer(b''.join(frames), dtype=np.int16)
+        
+        # Calculate RMS (Root Mean Square) volume level
+        rms_volume = np.sqrt(np.mean(audio_data.astype(np.float32) ** 2))
+        
+        # Set threshold for voice activity (adjust this value as needed)
+        # Lower values = more sensitive, higher values = less sensitive
+        voice_threshold = 500  # Typical speaking volume threshold
+        
+        print(f"🔊 [AUDIO] Audio RMS level: {rms_volume:.1f} (threshold: {voice_threshold})")
+        
+        if rms_volume < voice_threshold:
+            print("🤫 [AUDIO] Audio level too low - likely silence or background noise. Skipping transcription.")
             return
         
         # Create temporary WAV file for Whisper processing
