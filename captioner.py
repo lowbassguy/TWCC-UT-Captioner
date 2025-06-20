@@ -283,7 +283,7 @@ class SecureSettings:
             print(f"❌ [SETTINGS] Error loading API key: {e}")
             return None
 
-    def save_ui_preferences(self, bg_color, text_color, font_size, language):
+    def save_ui_preferences(self, bg_color, text_color, font_size, language, recent_languages=None):
         """
         Save UI preferences to local file.
         
@@ -292,6 +292,7 @@ class SecureSettings:
             text_color (str): Text color selection  
             font_size (int): Font size value
             language (str): Selected language
+            recent_languages (list): List of recently used languages
             
         Returns:
             bool: True if successful, False if error occurred
@@ -303,7 +304,8 @@ class SecureSettings:
                 "background_color": bg_color,
                 "text_color": text_color,
                 "font_size": font_size,
-                "language": language
+                "language": language,
+                "recent_languages": recent_languages or []
             }
             
             with open(ui_settings_file, 'w') as f:
@@ -430,31 +432,61 @@ class SubtitleApp:
         self.session_start_time = None
         self.session_end_time = None
         
-        # Supported languages for translation
+        # Comprehensive language support (based on Google Translate 2024 language list)
         # Dictionary maps display names to language codes for OpenAI API
         self.languages = {
-            "English": "en",
-            "Spanish": "es",
-            "French": "fr",
-            "German": "de",
-            "Italian": "it",
-            "Portuguese": "pt",
-            "Russian": "ru",
-            "Japanese": "ja",
-            "Korean": "ko",
-            "Chinese (Simplified)": "zh-CN",
-            "Chinese (Traditional)": "zh-TW",
-            "Arabic": "ar",
-            "Hindi": "hi",
-            "Dutch": "nl",
-            "Polish": "pl",
-            "Turkish": "tr",
-            "Swedish": "sv",
-            "Danish": "da",
-            "Norwegian": "no",
-            "Finnish": "fi"
+            "Abkhaz": "ab", "Acehnese": "ace", "Acholi": "ach", "Afar": "aa", "Afrikaans": "af",
+            "Albanian": "sq", "Alur": "alz", "Amharic": "am", "Arabic": "ar", "Armenian": "hy",
+            "Assamese": "as", "Avar": "av", "Awadhi": "awa", "Aymara": "ay", "Azerbaijani": "az",
+            "Balinese": "ban", "Baluchi": "bal", "Bambara": "bm", "Baoulé": "bci", "Bashkir": "ba",
+            "Basque": "eu", "Batak Karo": "btx", "Batak Simalungun": "bts", "Batak Toba": "bbc",
+            "Belarusian": "be", "Bemba": "bem", "Bengali": "bn", "Betawi": "bew", "Bhojpuri": "bho",
+            "Bikol": "bik", "Bosnian": "bs", "Breton": "br", "Bulgarian": "bg", "Buryat": "bua",
+            "Cantonese": "yue", "Catalan": "ca", "Cebuano": "ceb", "Chamorro": "ch", "Chechen": "ce",
+            "Chichewa": "ny", "Chinese (Simplified)": "zh-CN", "Chinese (Traditional)": "zh-TW",
+            "Chuukese": "chk", "Chuvash": "cv", "Corsican": "co", "Crimean Tatar": "crh",
+            "Croatian": "hr", "Czech": "cs", "Danish": "da", "Dari": "prs", "Dhivehi": "dv",
+            "Dinka": "din", "Dogri": "doi", "Dombe": "dov", "Dutch": "nl", "Dyula": "dyu",
+            "Dzongkha": "dz", "English": "en", "Esperanto": "eo", "Estonian": "et", "Ewe": "ee",
+            "Faroese": "fo", "Fijian": "fj", "Filipino": "fil", "Finnish": "fi", "Fon": "fon",
+            "French": "fr", "Friulian": "fur", "Fulani": "ff", "Ga": "gaa", "Galician": "gl",
+            "Ganda": "lg", "Georgian": "ka", "German": "de", "Greek": "el", "Guarani": "gn",
+            "Gujarati": "gu", "Hakha Chin": "cnh", "Hausa": "ha", "Hawaiian": "haw", "Hebrew": "he",
+            "Hiligaynon": "hil", "Hindi": "hi", "Hmong": "hmn", "Hungarian": "hu", "Hunsrik": "hrx",
+            "Iban": "iba", "Icelandic": "is", "Igbo": "ig", "Ilocano": "ilo", "Indonesian": "id",
+            "Irish": "ga", "Italian": "it", "Jamaican Patois": "jam", "Japanese": "ja", "Javanese": "jv",
+            "Jingpo": "kac", "Kalaallisut": "kl", "Kannada": "kn", "Kanuri": "kr", "Kapampangan": "pam",
+            "Kashmiri": "ks", "Kazakh": "kk", "Khasi": "kha", "Khmer": "km", "Kiga": "cgg",
+            "Kikongo": "kg", "Kinyarwanda": "rw", "Kirghiz": "ky", "Kituba": "ktu", "Kokborok": "trp",
+            "Komi": "kv", "Konkani": "gom", "Korean": "ko", "Krio": "kri", "Kurdish (Kurmanji)": "ku",
+            "Kurdish (Sorani)": "ckb", "Lao": "lo", "Latgalian": "ltg", "Latin": "la", "Latvian": "lv",
+            "Ligurian": "lij", "Limburgish": "li", "Lingala": "ln", "Lithuanian": "lt", "Lombard": "lmo",
+            "Luo": "luo", "Luxembourgish": "lb", "Macedonian": "mk", "Madurese": "mad", "Makassar": "mak",
+            "Malagasy": "mg", "Malay": "ms", "Malay (Jawi)": "ms-Arab", "Malayalam": "ml", "Maltese": "mt",
+            "Manx": "gv", "Maori": "mi", "Marathi": "mr", "Marshallese": "mh", "Marwadi": "mwr",
+            "Mauritian Creole": "mfe", "Meadow Mari": "chm", "Meiteilon": "mni", "Minang": "min",
+            "Mizo": "lus", "Mongolian": "mn", "Myanmar": "my", "Nahuatl": "nah", "Ndau": "ndc",
+            "Ndebele (South)": "nr", "Nepali": "ne", "Nepalbhasa": "new", "NKo": "nqo", "Norwegian": "no",
+            "Nuer": "nus", "Occitan": "oc", "Odia": "or", "Oromo": "om", "Ossetian": "os",
+            "Pangasinan": "pag", "Papiamento": "pap", "Pashto": "ps", "Persian": "fa", "Polish": "pl",
+            "Portuguese": "pt", "Portuguese (Portugal)": "pt-PT", "Punjabi": "pa", "Punjabi (Shahmukhi)": "pa-Arab",
+            "Q'eqchi'": "quc", "Quechua": "qu", "Romani": "rom", "Romanian": "ro", "Rundi": "rn",
+            "Russian": "ru", "Sami (North)": "se", "Samoan": "sm", "Sango": "sg", "Sanskrit": "sa",
+            "Santali": "sat", "Scots Gaelic": "gd", "Serbian": "sr", "Sesotho": "st", "Seychellois Creole": "crs",
+            "Shan": "shn", "Shona": "sn", "Sicilian": "scn", "Silesian": "szl", "Sindhi": "sd",
+            "Sinhala": "si", "Slovak": "sk", "Slovenian": "sl", "Somali": "so", "Spanish": "es",
+            "Sundanese": "su", "Susu": "sus", "Swahili": "sw", "Swati": "ss", "Swedish": "sv",
+            "Tahitian": "ty", "Tajik": "tg", "Tamil": "ta", "Tamazight": "tzm", "Tamazight (Tifinagh)": "tzm-Tfng",
+            "Tatar": "tt", "Telugu": "te", "Tetum": "tet", "Thai": "th", "Tibetan": "bo",
+            "Tigrinya": "ti", "Tiv": "tiv", "Tok Pisin": "tpi", "Tongan": "to", "Tsonga": "ts",
+            "Tswana": "tn", "Tulu": "tcy", "Tumbuka": "tum", "Turkish": "tr", "Turkmen": "tk",
+            "Tuvan": "tyv", "Twi": "tw", "Udmurt": "udm", "Ukrainian": "uk", "Urdu": "ur",
+            "Uyghur": "ug", "Uzbek": "uz", "Venda": "ve", "Venetian": "vec", "Vietnamese": "vi",
+            "Waray": "war", "Welsh": "cy", "Wolof": "wo", "Xhosa": "xh", "Yakut": "sah",
+            "Yiddish": "yi", "Yoruba": "yo", "Yucatec Maya": "yua", "Zapotec": "zap", "Zulu": "zu"
         }
         self.selected_language = tk.StringVar(value="English")  # Currently selected target language
+        self.recent_languages = []  # Track recently used languages (up to 5)
         
         print("🖼️ [INIT] Setting up UI 🎨")
         self.setup_ui()
@@ -546,10 +578,10 @@ class SubtitleApp:
         
         # Language selection dropdown
         ttk.Label(control_frame, text="Output Language:").grid(row=0, column=0, padx=5)
-        language_menu = ttk.Combobox(control_frame, textvariable=self.selected_language, 
-                                    values=list(self.languages.keys()), width=20)
-        language_menu.grid(row=0, column=1, padx=5)
-        language_menu.bind('<<ComboboxSelected>>', self.on_language_changed)
+        self.language_menu = ttk.Combobox(control_frame, textvariable=self.selected_language, 
+                                         values=self.get_language_menu_list(), width=35)
+        self.language_menu.grid(row=0, column=1, padx=5)
+        self.language_menu.bind('<<ComboboxSelected>>', self.on_language_changed)
         
         # Recording start/stop button
         self.record_button = ttk.Button(control_frame, text="Start Recording", 
@@ -649,14 +681,114 @@ class SubtitleApp:
         # Save preferences when changed
         self.save_ui_preferences()
 
+    def get_language_menu_list(self):
+        """
+        Generate the language menu list with recent languages, then most common, then alphabetical.
+        
+        Structure:
+        1. Recent languages (last 5 selected)
+        2. 20 most commonly spoken world languages
+        3. All remaining languages alphabetically
+        
+        Returns:
+            list: Language names in the specified order
+        """
+        # Get recent languages that are still valid (up to 5)
+        valid_recent = [lang for lang in self.recent_languages[:5] if lang in self.languages]
+        
+        # 20 most commonly spoken languages in the world
+        most_common_languages = [
+            "Arabic", "Bengali", "Chinese (Simplified)", "English", "French", 
+            "German", "Hindi", "Indonesian", "Italian", "Japanese", "Javanese", 
+            "Korean", "Malay", "Marathi", "Portuguese", "Punjabi", "Russian", 
+            "Spanish", "Tamil", "Turkish"
+        ]
+        
+        # Filter to only include languages that exist in our dictionary and aren't in recent
+        valid_common = [lang for lang in most_common_languages 
+                       if lang in self.languages and lang not in valid_recent]
+        
+        # Get all remaining languages alphabetically
+        used_languages = set(valid_recent + valid_common)
+        remaining_languages = sorted([lang for lang in self.languages.keys() 
+                                    if lang not in used_languages])
+        
+        # Build the final menu list
+        menu_list = []
+        
+        # Add recent languages section
+        if valid_recent:
+            menu_list.append("--- Recent Languages ---")
+            menu_list.extend(valid_recent)
+        
+        # Add most common languages section
+        if valid_common:
+            menu_list.append("--- Most Common Languages ---")
+            menu_list.extend(valid_common)
+        
+        # Add remaining languages alphabetically
+        if remaining_languages:
+            menu_list.append("--- All Other Languages ---")
+            menu_list.extend(remaining_languages)
+        
+        return menu_list
+
+    def update_recent_languages(self, selected_language):
+        """
+        Update the recent languages list with the newly selected language.
+        
+        Args:
+            selected_language (str): The language that was just selected
+        """
+        # Skip if it's any separator line
+        if selected_language in ["--- Recent Languages ---", "--- Most Common Languages ---", "--- All Other Languages ---"]:
+            return
+            
+        # Remove the language if it's already in the list (to move it to front)
+        if selected_language in self.recent_languages:
+            self.recent_languages.remove(selected_language)
+        
+        # Add to the front of the list
+        self.recent_languages.insert(0, selected_language)
+        
+        # Keep only the last 5 recent languages
+        self.recent_languages = self.recent_languages[:5]
+        
+        # Update the dropdown menu values
+        self.language_menu.configure(values=self.get_language_menu_list())
+        
+        print(f"📝 [UI] Recent languages updated: {self.recent_languages}")
+
     def on_language_changed(self, event=None):
         """
         Handle language selection changes.
         
         Called when user selects a different language from the dropdown.
-        Saves the preference immediately.
+        Updates recent languages and saves preferences immediately.
         """
-        print(f"🌍 [UI] Language changed to: {self.selected_language.get()}")
+        selected = self.selected_language.get()
+        
+        # Handle separator selections - reset to previous valid selection
+        if selected in ["--- Recent Languages ---", "--- Most Common Languages ---", "--- All Other Languages ---"]:
+            # Find a valid language to set (first recent, or English, or first common)
+            if self.recent_languages:
+                self.selected_language.set(self.recent_languages[0])
+            elif "English" in self.languages:
+                self.selected_language.set("English")
+            else:
+                # Fallback to first common language
+                common_langs = ["Arabic", "Bengali", "Chinese (Simplified)", "English", "French"]
+                for lang in common_langs:
+                    if lang in self.languages:
+                        self.selected_language.set(lang)
+                        break
+            return
+        
+        print(f"🌍 [UI] Language changed to: {selected}")
+        
+        # Update recent languages list
+        self.update_recent_languages(selected)
+        
         # Save preferences when changed
         self.save_ui_preferences()
 
@@ -668,7 +800,8 @@ class SubtitleApp:
             bg_color=self.bg_color.get(),
             text_color=self.text_color.get(),
             font_size=self.font_size.get(),
-            language=self.selected_language.get()
+            language=self.selected_language.get(),
+            recent_languages=self.recent_languages
         )
 
     def load_ui_preferences(self):
@@ -686,12 +819,20 @@ class SubtitleApp:
             self.font_size.set(preferences.get("font_size", 24))
             self.selected_language.set(preferences.get("language", "English"))
             
+            # Load recent languages
+            self.recent_languages = preferences.get("recent_languages", [])
+            
+            # Update the language menu with recent languages
+            self.language_menu.configure(values=self.get_language_menu_list())
+            
             # Update UI appearance with loaded settings
             self.update_background()
             self.update_text_color()
             self.update_font()
             
             print(f"✅ [SETTINGS] Applied saved preferences: {preferences.get('background_color')} bg, {preferences.get('text_color')} text, {preferences.get('font_size')}px, {preferences.get('language')}")
+            if self.recent_languages:
+                print(f"📝 [SETTINGS] Loaded recent languages: {self.recent_languages}")
 
     def toggle_recording(self):
         """
