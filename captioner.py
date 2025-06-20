@@ -15,7 +15,7 @@ import json  # For settings file format
 import base64  # For encoding encrypted data
 import tempfile  # For temporary audio files during processing
 import wave  # For audio file creation and manipulation
-import platform  # For OS detection for font loading
+
 
 # Audio processing and AI imports
 import whisper  # OpenAI's speech-to-text model
@@ -489,8 +489,9 @@ class SubtitleApp:
         self.selected_language = tk.StringVar(value="English")  # Currently selected target language
         self.recent_languages = []  # Track recently used languages (up to 5)
         
-        print("🎯 [INIT] Loading custom fonts 🔤")
-        self.load_custom_fonts()
+        # Set default font family (system fonts only)
+        self.font_family = "Arial"
+        self.custom_font_loaded = False
         
         print("🖼️ [INIT] Setting up UI 🎨")
         self.setup_ui()
@@ -542,97 +543,26 @@ class SubtitleApp:
         else:
             print("❌ [INIT] OpenAI API key not found in settings")
 
-    def load_custom_fonts(self):
-        """
-        Load custom fonts from the Fonts directory.
-        
-        Attempts to load Libre Franklin SemiBold for subtitle display.
-        Falls back to system fonts if loading fails.
-        """
-        try:
-            # Path to the Libre Franklin SemiBold font
-            font_path = os.path.join("Fonts", "Libre_Franklin", "static", "LibreFranklin-SemiBold.ttf")
-            
-            if os.path.exists(font_path):
-                # For Windows, we need to use a different approach
-                if platform.system() == "Windows":
-                    # On Windows, we can try to register the font temporarily
-                    try:
-                        import ctypes
-                        from ctypes import wintypes
-                        
-                        # Convert to absolute path
-                        abs_font_path = os.path.abspath(font_path)
-                        
-                        # Load the font file
-                        # Note: This is a temporary registration for the session
-                        gdi32 = ctypes.windll.gdi32
-                        result = gdi32.AddFontResourceW(abs_font_path)
-                        
-                        if result:
-                            print(f"✅ [FONTS] Loaded Libre Franklin SemiBold from: {font_path}")
-                            self.custom_font_loaded = True
-                            self.font_family = "Libre Franklin SemiBold"
-                        else:
-                            print(f"⚠️ [FONTS] Failed to register font, using fallback")
-                            self.custom_font_loaded = False
-                            self.font_family = "Arial"
-                            
-                    except Exception as e:
-                        print(f"⚠️ [FONTS] Windows font loading error: {e}")
-                        self.custom_font_loaded = False
-                        self.font_family = "Arial"
-                else:
-                    # For other platforms, tkinter should handle font files directly
-                    print(f"📁 [FONTS] Font file found: {font_path}")
-                    self.custom_font_loaded = True
-                    self.font_family = "Libre Franklin"
-            else:
-                print(f"❌ [FONTS] Font file not found: {font_path}")
-                self.custom_font_loaded = False
-                self.font_family = "Arial"
-                
-        except Exception as e:
-            print(f"❌ [FONTS] Error loading custom fonts: {e}")
-            self.custom_font_loaded = False
-            self.font_family = "Arial"
 
-    def create_subtitle_font(self, font_families, size):
+
+    def create_subtitle_font(self, size):
         """
-        Create a subtitle font with fallback options.
+        Create a subtitle font using system fonts.
         
         Args:
-            font_families (list): List of font family names to try in order
             size (int): Font size
             
         Returns:
             tkinter.font.Font: The created font object
         """
-        for family in font_families:
-            try:
-                # For Libre Franklin SemiBold, we don't need to specify weight since it's built into the font
-                if "Libre Franklin" in family:
-                    test_font = font.Font(family=family, size=size)
-                else:
-                    # For system fonts, use bold weight
-                    test_font = font.Font(family=family, size=size, weight="bold")
-                
-                # Test if the font actually works by getting its actual family
-                actual_family = test_font.actual("family")
-                print(f"🔤 [FONTS] Testing font: {family} -> Actual: {actual_family}")
-                
-                # If we get the font we asked for (or close enough), use it
-                if family.lower() in actual_family.lower() or actual_family != "":
-                    print(f"✅ [FONTS] Using font: {actual_family} (size: {size})")
-                    return test_font
-                    
-            except Exception as e:
-                print(f"⚠️ [FONTS] Font {family} failed: {e}")
-                continue
-        
-        # Final fallback - default system font
-        print("🔤 [FONTS] Using system default font")
-        return font.Font(size=size, weight="bold")
+        try:
+            # Try Arial first (widely available), then fallback to system default
+            subtitle_font = font.Font(family="Arial", size=size, weight="bold")
+            print(f"✅ [FONTS] Using Arial font (size: {size})")
+            return subtitle_font
+        except Exception as e:
+            print(f"⚠️ [FONTS] Arial failed, using system default: {e}")
+            return font.Font(size=size, weight="bold")
 
     def show_settings_dialog(self):
         """
@@ -720,10 +650,8 @@ class SubtitleApp:
         self.text_frame.grid(row=1, column=0, sticky=(tk.W, tk.E, tk.N, tk.S), padx=10, pady=10)
         self.text_frame.grid_propagate(False)  # Maintain fixed height
         
-        # Subtitle text font configuration with custom font
-        # Use loaded custom font or fallback to system fonts
-        font_families = [self.font_family, "Arial", "Helvetica", "Sans-serif"]
-        self.subtitle_font = self.create_subtitle_font(font_families, 24)
+        # Subtitle text font configuration
+        self.subtitle_font = self.create_subtitle_font(24)
         
         # For streaming overlay - start with blank display (no distracting text)
         initial_text = ""
@@ -776,9 +704,8 @@ class SubtitleApp:
         """
         print(f"🔠 [UI] Font size changed to: {self.font_size.get()} px")
         
-        # Recreate the font with the new size to maintain custom font family
-        font_families = [self.font_family, "Arial", "Helvetica", "Sans-serif"]
-        self.subtitle_font = self.create_subtitle_font(font_families, self.font_size.get())
+        # Recreate the font with the new size
+        self.subtitle_font = self.create_subtitle_font(self.font_size.get())
         
         # Update the label to use the new font
         self.text_label.configure(font=self.subtitle_font)
