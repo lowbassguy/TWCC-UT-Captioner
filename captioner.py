@@ -595,11 +595,8 @@ class SubtitleApp:
         # Subtitle text font configuration
         self.subtitle_font = font.Font(family="Arial", size=24, weight="bold")
         
-        # Check API key status and set appropriate initial message
-        if not self.settings.load_api_key():
-            initial_text = "Click 'Settings' to configure your OpenAI API key, then 'Start Recording' to begin..."
-        else:
-            initial_text = "Click 'Start Recording' to begin..."
+        # For streaming overlay - start with blank display (no distracting text)
+        initial_text = ""
             
         # Main subtitle label with word wrapping and center alignment
         self.text_label = tk.Label(self.text_frame, text=initial_text, 
@@ -734,7 +731,7 @@ class SubtitleApp:
         
         self.is_recording = True
         self.record_button.configure(text="Stop Recording")
-        self.text_label.configure(text="Listening...")
+        self.text_label.configure(text="")  # Keep overlay clean - no "Listening..." text
         
         # Start recording in separate thread to avoid blocking UI
         self.record_thread = threading.Thread(target=self.record_loop)
@@ -760,7 +757,7 @@ class SubtitleApp:
         self.generate_session_report()
         
         self.record_button.configure(text="Start Recording")
-        self.text_label.configure(text="Recording stopped.")
+        self.text_label.configure(text="")  # Clear overlay for clean stream appearance
 
     def record_loop(self):
         """
