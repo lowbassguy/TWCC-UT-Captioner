@@ -284,7 +284,7 @@ class SecureSettings:
             print(f"❌ [SETTINGS] Error loading API key: {e}")
             return None
 
-    def save_ui_preferences(self, bg_color, text_color, font_size, language, recent_languages=None):
+    def save_ui_preferences(self, bg_color, text_color, font_size, language, recent_languages=None, auto_clear_enabled=False, auto_clear_timeout=5):
         """
         Save UI preferences to local file.
         
@@ -294,6 +294,8 @@ class SecureSettings:
             font_size (int): Font size value
             language (str): Selected language
             recent_languages (list): List of recently used languages
+            auto_clear_enabled (bool): Auto-clear enabled state
+            auto_clear_timeout (int): Auto-clear timeout duration in seconds
             
         Returns:
             bool: True if successful, False if error occurred
@@ -306,7 +308,9 @@ class SecureSettings:
                 "text_color": text_color,
                 "font_size": font_size,
                 "language": language,
-                "recent_languages": recent_languages or []
+                "recent_languages": recent_languages or [],
+                "auto_clear_enabled": auto_clear_enabled,
+                "auto_clear_timeout": auto_clear_timeout
             }
             
             with open(ui_settings_file, 'w') as f:
@@ -422,6 +426,11 @@ class SubtitleApp:
         
         # Application state
         self.is_recording = False  # Recording state flag
+        
+        # Subtitle auto-clear functionality
+        self.subtitle_timeout_seconds = tk.IntVar(value=5)  # Default 5 seconds
+        self.auto_clear_enabled = tk.BooleanVar(value=True)  # Auto-clear enabled by default
+        self.clear_timer_id = None  # Track scheduled clear operation
         
         # Token usage tracking for cost estimation
         self.total_input_tokens = 0
@@ -543,8 +552,6 @@ class SubtitleApp:
         else:
             print("❌ [INIT] OpenAI API key not found in settings")
 
-
-
     def create_subtitle_font(self, size):
         """
         Create a subtitle font using system fonts.
@@ -644,6 +651,23 @@ class SubtitleApp:
         settings_button = ttk.Button(control_frame, text="Settings", 
                                    command=self.show_settings_dialog)
         settings_button.grid(row=0, column=9, padx=5)
+        
+        # Second row for subtitle auto-clear controls
+        ttk.Label(control_frame, text="Auto-clear subtitles:").grid(row=1, column=0, padx=5, sticky=tk.W)
+        
+        # Auto-clear enable/disable checkbox
+        auto_clear_check = ttk.Checkbutton(control_frame, text="Enabled", 
+                                         variable=self.auto_clear_enabled,
+                                         command=self.on_auto_clear_changed)
+        auto_clear_check.grid(row=1, column=1, padx=5, sticky=tk.W)
+        
+        # Timeout duration spinner
+        ttk.Label(control_frame, text="Timeout (seconds):").grid(row=1, column=2, padx=5, sticky=tk.W)
+        timeout_spinner = ttk.Spinbox(control_frame, from_=2, to=15, 
+                                    textvariable=self.subtitle_timeout_seconds, 
+                                    width=10,
+                                    command=self.on_timeout_changed)
+        timeout_spinner.grid(row=1, column=3, padx=5, sticky=tk.W)
         
         # Main subtitle display area
         self.text_frame = tk.Frame(self.root, bg="black", height=150)
@@ -824,6 +848,68 @@ class SubtitleApp:
         # Save preferences when changed
         self.save_ui_preferences()
 
+    def on_auto_clear_changed(self):
+        """
+        Handle auto-clear enable/disable changes.
+        
+        Called when user toggles the auto-clear checkbox.
+        Cancels any pending clear timer if auto-clear is disabled.
+        """
+        enabled = self.auto_clear_enabled.get()
+        print(f"⏰ [UI] Auto-clear changed to: {'Enabled' if enabled else 'Disabled'}")
+        
+        # Cancel pending clear timer if auto-clear is disabled
+        if not enabled and self.clear_timer_id:
+            self.root.after_cancel(self.clear_timer_id)
+            self.clear_timer_id = None
+            print("❌ [UI] Cancelled pending subtitle clear timer")
+        
+        # Save preferences
+        self.save_ui_preferences()
+    
+    def on_timeout_changed(self):
+        """
+        Handle auto-clear timeout duration changes.
+        
+        Called when user adjusts the timeout spinner.
+        """
+        timeout = self.subtitle_timeout_seconds.get()
+        print(f"⏰ [UI] Auto-clear timeout changed to: {timeout} seconds")
+        
+        # Save preferences
+        self.save_ui_preferences()
+    
+    def schedule_subtitle_clear(self):
+        """
+        Schedule the subtitle to be cleared after the configured timeout.
+        
+        This method:
+        1. Cancels any existing clear timer
+        2. Schedules a new clear operation if auto-clear is enabled
+        3. Uses tkinter's after() method for thread-safe UI updates
+        """
+        # Cancel any existing timer
+        if self.clear_timer_id:
+            self.root.after_cancel(self.clear_timer_id)
+            self.clear_timer_id = None
+        
+        # Schedule new clear timer if auto-clear is enabled
+        if self.auto_clear_enabled.get():
+            timeout_ms = self.subtitle_timeout_seconds.get() * 1000  # Convert to milliseconds
+            self.clear_timer_id = self.root.after(timeout_ms, self.clear_subtitle)
+            print(f"⏰ [SUBTITLE] Scheduled subtitle clear in {self.subtitle_timeout_seconds.get()} seconds")
+    
+    def clear_subtitle(self):
+        """
+        Clear the subtitle display.
+        
+        Called by the timer when the timeout expires.
+        Only clears if no new subtitle has been scheduled.
+        """
+        print("🧹 [SUBTITLE] Clearing subtitle due to timeout")
+        self.text_label.configure(text="")
+        self.clear_timer_id = None  # Reset timer ID
+
     def save_ui_preferences(self):
         """
         Save current UI preferences to settings file.
@@ -833,7 +919,9 @@ class SubtitleApp:
             text_color=self.text_color.get(),
             font_size=self.font_size.get(),
             language=self.selected_language.get(),
-            recent_languages=self.recent_languages
+            recent_languages=self.recent_languages,
+            auto_clear_enabled=self.auto_clear_enabled.get(),
+            auto_clear_timeout=self.subtitle_timeout_seconds.get()
         )
 
     def load_ui_preferences(self):
@@ -854,6 +942,10 @@ class SubtitleApp:
             # Load recent languages
             self.recent_languages = preferences.get("recent_languages", [])
             
+            # Load auto-clear preferences
+            self.auto_clear_enabled.set(preferences.get("auto_clear_enabled", True))
+            self.subtitle_timeout_seconds.set(preferences.get("auto_clear_timeout", 5))
+            
             # Update the language menu with recent languages
             self.language_menu.configure(values=self.get_language_menu_list())
             
@@ -863,6 +955,7 @@ class SubtitleApp:
             self.update_font()
             
             print(f"✅ [SETTINGS] Applied saved preferences: {preferences.get('background_color')} bg, {preferences.get('text_color')} text, {preferences.get('font_size')}px, {preferences.get('language')}")
+            print(f"⏰ [SETTINGS] Auto-clear: {'Enabled' if preferences.get('auto_clear_enabled', True) else 'Disabled'} ({preferences.get('auto_clear_timeout', 5)}s timeout)")
             if self.recent_languages:
                 print(f"📝 [SETTINGS] Loaded recent languages: {self.recent_languages}")
 
@@ -1039,7 +1132,7 @@ class SubtitleApp:
         
         # Set threshold for voice activity (adjust this value as needed)
         # Lower values = more sensitive, higher values = less sensitive
-        voice_threshold = 500  # Typical speaking volume threshold
+        voice_threshold = 150  # Typical speaking volume threshold
         
         print(f"🔊 [AUDIO] Audio RMS level: {rms_volume:.1f} (threshold: {voice_threshold})")
         
@@ -1309,8 +1402,9 @@ EFFICIENCY METRICS:
         This thread:
         1. Monitors the text queue for new processed text
         2. Updates the subtitle display when new text arrives
-        3. Uses tkinter's thread-safe after() method for UI updates
-        4. Runs continuously until application shutdown
+        3. Schedules auto-clear timer for new subtitles
+        4. Uses tkinter's thread-safe after() method for UI updates
+        5. Runs continuously until application shutdown
         
         This separation ensures UI updates don't block audio processing
         and provides smooth, responsive subtitle display.
@@ -1324,7 +1418,12 @@ EFFICIENCY METRICS:
                 print(f"📨 [THREAD] Got text from queue: '{text}'")
                 
                 # Schedule UI update on main thread (thread-safe)
-                self.root.after(0, lambda t=text: self.text_label.configure(text=t))
+                def update_and_schedule_clear(t=text):
+                    self.text_label.configure(text=t)
+                    # Schedule auto-clear timer for this subtitle
+                    self.schedule_subtitle_clear()
+                
+                self.root.after(0, update_and_schedule_clear)
                 
             except queue.Empty:
                 # Timeout is normal - continue loop
@@ -1341,6 +1440,7 @@ EFFICIENCY METRICS:
         2. PyAudio resources are released
         3. Background threads are signaled to exit
         4. Thread pools are shut down properly
+        5. Pending timers are cancelled
         
         This prevents resource leaks and ensures clean application shutdown.
         """
@@ -1348,6 +1448,12 @@ EFFICIENCY METRICS:
         
         # Stop recording
         self.is_recording = False
+        
+        # Cancel any pending subtitle clear timer
+        if self.clear_timer_id:
+            self.root.after_cancel(self.clear_timer_id)
+            self.clear_timer_id = None
+            print("❌ [CLEANUP] Cancelled pending subtitle clear timer")
         
         # Terminate audio system
         self.audio.terminate()
