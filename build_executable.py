@@ -28,7 +28,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        # Include any data files if needed
+        # Include Whisper's data files - CRITICAL FIX
+        ('C:\\\\Users\\\\basss\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\Lib\\\\site-packages\\\\whisper\\\\assets', 'whisper/assets'),
     ],
     hiddenimports=[
         'whisper',
