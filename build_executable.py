@@ -48,10 +48,18 @@ a = Analysis(
         'tempfile',
         'wave',
         'concurrent.futures',
-        # Whisper dependencies
+        # Whisper dependencies - CRITICAL
         'torch',
         'torchaudio',
+        'tiktoken',
+        'numba',
+        'librosa',
+        'soundfile',
         'ffmpeg',
+        # OpenAI dependencies - CRITICAL
+        'httpx',
+        'certifi',
+        'distro',
         # Additional dependencies that might be missed
         'PIL',
         'regex',
@@ -92,7 +100,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # Set to True if you want to see console output for debugging
+    console=True,  # TEMPORARILY ENABLE for debugging - change back to False later
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
