@@ -196,3 +196,14 @@ cython_debug/
 # TWCC Captioner - Expense Reports
 #  Contains sensitive financial/usage data and should not be committed to version control
 expense_reports/
+
+# TWCC Captioner - Temporary Audio Files
+#  Temporary WAV files created during audio processing - should be cleaned up automatically
+temp_audio_*.wav
+
+# Temporary files (various patterns)
+tmp*
+*.tmp
+temp*
+*.temp
+*~
