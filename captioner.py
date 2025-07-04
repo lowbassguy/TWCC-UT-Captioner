@@ -1125,7 +1125,7 @@ class SubtitleApp:
             # Check if this chunk contains speech
             audio_data = np.frombuffer(data, dtype=np.int16)
             rms_volume = np.sqrt(np.mean(audio_data.astype(np.float32) ** 2))
-            has_speech = rms_volume > 100  # Lowered threshold for better sensitivity (was 150)
+            has_speech = rms_volume > 150  # Lowered threshold for better sensitivity (was 150)
             
             current_time = time.time()
             
@@ -1243,7 +1243,7 @@ class SubtitleApp:
         
         # Set threshold for voice activity (adjust this value as needed)
         # Lower values = more sensitive, higher values = less sensitive
-        voice_threshold = 100  # Lowered threshold for better sensitivity (matches smart recording)
+        voice_threshold = 150  # Lowered threshold for better sensitivity (matches smart recording)
         
         print(f"🔊 [AUDIO] Audio RMS level: {rms_volume:.1f} (threshold: {voice_threshold})")
         
