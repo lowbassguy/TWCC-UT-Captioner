@@ -19,35 +19,24 @@ def install_build_dependencies():
 def create_spec_file():
     """Create a PyInstaller spec file with custom configuration."""
     
-    # Dynamically find the Whisper package location
-    import importlib.util
-    whisper_spec = importlib.util.find_spec('whisper')
-    if whisper_spec is None:
-        print("ERROR: Whisper package not found! Please install it with: pip install openai-whisper")
-        sys.exit(1)
-    
-    # Get the directory where whisper is installed
-    whisper_path = Path(whisper_spec.origin).parent
-    whisper_assets = whisper_path / 'assets'
-    
-    # Convert to string and escape backslashes for the spec file
-    whisper_assets_str = str(whisper_assets).replace('\\', '\\\\')
-    
-    print(f"Found Whisper assets at: {whisper_assets}")
-    
-    spec_content = f"""
+    spec_content = """
 # -*- mode: python ; coding: utf-8 -*-
+import os
+from PyInstaller.utils.hooks import collect_data_files
 
 block_cipher = None
+
+# Collect Whisper data files dynamically
+whisper_datas = collect_data_files('whisper')
+# Also collect tiktoken data files (required for Whisper tokenization)
+tiktoken_datas = collect_data_files('tiktoken')
+tiktoken_cache_datas = collect_data_files('tiktoken_ext')
 
 a = Analysis(
     ['captioner.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        # Include Whisper's data files - dynamically discovered
-        ('{whisper_assets_str}', 'whisper/assets'),
-    ],
+    datas=whisper_datas + tiktoken_datas + tiktoken_cache_datas,
     hiddenimports=[
         'whisper',
         'openai', 
@@ -85,7 +74,7 @@ a = Analysis(
         'more_itertools'
     ],
     hookspath=[],
-    hooksconfig={{}},
+    hooksconfig={},
     runtime_hooks=[],
     excludes=[
         # Exclude unnecessary modules to reduce size
@@ -118,7 +107,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,  # Clean windowed application - no console
+    console=True,  # Enable console for debugging
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
