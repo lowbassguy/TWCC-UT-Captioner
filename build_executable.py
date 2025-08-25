@@ -12,13 +12,30 @@ from pathlib import Path
 
 def install_build_dependencies():
     """Install PyInstaller if not already installed."""
-    print("🔧 Installing build dependencies...")
+    print("Installing build dependencies...")
     subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
-    print("✅ Build dependencies installed!")
+    print("Build dependencies installed!")
 
 def create_spec_file():
     """Create a PyInstaller spec file with custom configuration."""
-    spec_content = """
+    
+    # Dynamically find the Whisper package location
+    import importlib.util
+    whisper_spec = importlib.util.find_spec('whisper')
+    if whisper_spec is None:
+        print("ERROR: Whisper package not found! Please install it with: pip install openai-whisper")
+        sys.exit(1)
+    
+    # Get the directory where whisper is installed
+    whisper_path = Path(whisper_spec.origin).parent
+    whisper_assets = whisper_path / 'assets'
+    
+    # Convert to string and escape backslashes for the spec file
+    whisper_assets_str = str(whisper_assets).replace('\\', '\\\\')
+    
+    print(f"Found Whisper assets at: {whisper_assets}")
+    
+    spec_content = f"""
 # -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
@@ -28,8 +45,8 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        # Include Whisper's data files - CRITICAL FIX
-        ('C:\\\\Users\\\\basss\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\Lib\\\\site-packages\\\\whisper\\\\assets', 'whisper/assets'),
+        # Include Whisper's data files - dynamically discovered
+        ('{whisper_assets_str}', 'whisper/assets'),
     ],
     hiddenimports=[
         'whisper',
@@ -68,7 +85,7 @@ a = Analysis(
         'more_itertools'
     ],
     hookspath=[],
-    hooksconfig={},
+    hooksconfig={{}},
     runtime_hooks=[],
     excludes=[
         # Exclude unnecessary modules to reduce size
@@ -114,12 +131,12 @@ exe = EXE(
     
     with open('captioner.spec', 'w') as f:
         f.write(spec_content)
-    print("✅ Created PyInstaller spec file!")
+    print("Created PyInstaller spec file!")
 
 def build_executable():
     """Build the executable using PyInstaller."""
-    print("🏗️ Building standalone executable...")
-    print("⚠️  This may take several minutes as it downloads and bundles dependencies...")
+    print("Building standalone executable...")
+    print("WARNING: This may take several minutes as it downloads and bundles dependencies...")
     
     # Clean previous builds
     if os.path.exists('dist'):
@@ -134,8 +151,8 @@ def build_executable():
         "captioner.spec"
     ])
     
-    print("✅ Executable built successfully!")
-    print(f"📁 Output location: {os.path.abspath('dist')}")
+    print("Executable built successfully!")
+    print(f"Output location: {os.path.abspath('dist')}")
 
 def create_version_info():
     """Create version info file for the executable."""
@@ -175,7 +192,7 @@ VSVersionInfo(
     
     with open('version_info.txt', 'w') as f:
         f.write(version_info)
-    print("✅ Created version info file!")
+    print("Created version info file!")
 
 def create_readme():
     """Create a README for the executable distribution."""
@@ -234,11 +251,11 @@ For support or questions, visit: https://github.com/your-repo/TWCC-Captioner
     
     with open('README_EXECUTABLE.txt', 'w') as f:
         f.write(readme_content)
-    print("✅ Created README for executable!")
+    print("Created README for executable!")
 
 def main():
     """Main build process."""
-    print("🚀 TWCC Captioner - Executable Build Process")
+    print("TWCC Captioner - Executable Build Process")
     print("=" * 50)
     
     try:
@@ -255,24 +272,24 @@ def main():
         
         # Step 4: Success message
         print("\n" + "=" * 50)
-        print("🎉 BUILD SUCCESSFUL!")
+        print("BUILD SUCCESSFUL!")
         print("=" * 50)
-        print(f"📁 Your executable is located at: {os.path.abspath('dist/TWCC-Captioner.exe')}")
-        print("\n📋 Next steps:")
+        print(f"Your executable is located at: {os.path.abspath('dist/TWCC-Captioner.exe')}")
+        print("\nNext steps:")
         print("1. Test the executable on your current machine")
         print("2. Copy the entire 'dist' folder to target computers")
         print("3. Run TWCC-Captioner.exe and configure API key in Settings")
-        print("\n⚠️  Remember: Users will need their own OpenAI API key!")
+        print("\nREMEMBER: Users will need their own OpenAI API key!")
         
         # Check if expense_reports directory should be included
         if os.path.exists('expense_reports'):
-            print("\n💡 Tip: Copy your 'expense_reports' folder to dist/ if you want to include session reports")
+            print("\nTip: Copy your 'expense_reports' folder to dist/ if you want to include session reports")
         
     except subprocess.CalledProcessError as e:
-        print(f"❌ Build failed with error: {e}")
+        print(f"ERROR: Build failed with error: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"❌ Unexpected error: {e}")
+        print(f"ERROR: Unexpected error: {e}")
         sys.exit(1)
 
 if __name__ == "__main__":
