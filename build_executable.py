@@ -17,7 +17,38 @@ def install_build_dependencies():
     print("Build dependencies installed!")
 
 def create_spec_file():
-    """Create a PyInstaller spec file with custom configuration."""
+    """Create a PyInstaller spec file with custom configuration if it doesn't exist."""
+    
+    # Check if spec file already exists
+    if os.path.exists('captioner.spec'):
+        print("Found existing captioner.spec file - preserving it")
+        return
+    
+    print("Creating new PyInstaller spec file...")
+    
+    # First create the runtime hook file
+    runtime_hook_content = '''
+import os
+import sys
+
+# Set environment variables for Whisper model caching
+# This ensures models are stored in user's home directory where we have write access
+if getattr(sys, 'frozen', False):
+    user_home = os.path.expanduser("~")
+    os.environ['TORCH_HOME'] = os.path.join(user_home, ".cache", "torch")
+    os.environ['WHISPER_CACHE_DIR'] = os.path.join(user_home, ".cache", "whisper")
+    os.environ['HF_HOME'] = os.path.join(user_home, ".cache", "huggingface")
+    
+    # Ensure directories exist
+    for env_var in ['TORCH_HOME', 'WHISPER_CACHE_DIR', 'HF_HOME']:
+        path = os.environ[env_var]
+        os.makedirs(path, exist_ok=True)
+'''
+    
+    # Write runtime hook file
+    with open('runtime_hook.py', 'w') as f:
+        f.write(runtime_hook_content)
+    print("Created runtime_hook.py for model path configuration")
     
     spec_content = """
 # -*- mode: python ; coding: utf-8 -*-
@@ -75,7 +106,7 @@ a = Analysis(
     ],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['runtime_hook.py'],
     excludes=[
         # Exclude unnecessary modules to reduce size
         'matplotlib',

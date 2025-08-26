@@ -19,6 +19,7 @@ import threading  # For concurrent audio processing and UI updates
 import queue  # Thread-safe communication between audio processing and UI
 import time
 import os
+import sys  # For detecting PyInstaller bundle
 import json  # For settings file format
 import base64  # For encoding encrypted data
 import tempfile  # For temporary audio files during processing
@@ -412,12 +413,37 @@ class SubtitleApp:
         # Whisper model initialization for speech-to-text
         try:
             print("🎤 [INIT] Loading Whisper model... 🕗")
-            # Load base model (good balance of speed vs accuracy for real-time use)
-            self.whisper_model = whisper.load_model("base")
+            
+            # Check if running as PyInstaller bundle and set appropriate model path
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                # Running as executable - use user's home directory for model storage
+                print("📦 [INIT] Running as bundled executable")
+                model_dir = os.path.join(os.path.expanduser("~"), ".cache", "whisper")
+                os.makedirs(model_dir, exist_ok=True)
+                print(f"📂 [INIT] Model directory: {model_dir}")
+                
+                # Set environment variables for Torch/Whisper to use our directory
+                os.environ['TORCH_HOME'] = os.path.join(os.path.expanduser("~"), ".cache", "torch")
+                os.environ['WHISPER_CACHE_DIR'] = model_dir
+                
+                # Load model with explicit download root
+                self.whisper_model = whisper.load_model("base", download_root=model_dir)
+            else:
+                # Running from source - use default behavior
+                print("🐍 [INIT] Running from source code")
+                self.whisper_model = whisper.load_model("base")
+            
             print("✅ [INIT] Whisper model loaded successfully!")
         except Exception as e:
             print(f"❌ [INIT] Failed to load Whisper model: {e}")
             self.whisper_model = None
+            # Show user-friendly error message
+            messagebox.showerror(
+                "Model Loading Error",
+                f"Failed to load Whisper speech recognition model.\n\n"
+                f"Error: {str(e)}\n\n"
+                f"The application will not be able to transcribe audio."
+            )
 
         # Audio capture configuration
         self.CHUNK = 1024  # Audio buffer size (smaller = more responsive, larger = more efficient)
