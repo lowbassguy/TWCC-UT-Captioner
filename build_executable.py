@@ -18,6 +18,20 @@ def install_build_dependencies():
 
 def create_spec_file():
     """Create a PyInstaller spec file with custom configuration."""
+
+    # Dynamically locate the whisper assets directory to make the build portable
+    try:
+        import whisper
+        whisper_path = Path(whisper.__file__).parent
+        assets_path = str(whisper_path / 'assets').replace('\\', '\\\\')
+        print(f"✅ Found whisper assets at: {assets_path}")
+    except ImportError:
+        print("❌ Could not import whisper. Please ensure 'openai-whisper' is installed via requirements.txt.")
+        sys.exit(1)
+    except Exception as e:
+        print(f"❌ Error locating whisper assets: {e}")
+        sys.exit(1)
+
     spec_content = """
 # -*- mode: python ; coding: utf-8 -*-
 
@@ -112,6 +126,11 @@ exe = EXE(
 )
 """
     
+    # Replace the hardcoded path with the dynamically found one
+    hardcoded_path_str = "('C:\\\\Users\\\\basss\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\Lib\\\\site-packages\\\\whisper\\\\assets', 'whisper/assets')"
+    dynamic_path_str = f"('{assets_path}', 'whisper/assets')"
+    spec_content = spec_content.replace(hardcoded_path_str, dynamic_path_str)
+
     with open('captioner.spec', 'w') as f:
         f.write(spec_content)
     print("✅ Created PyInstaller spec file!")
