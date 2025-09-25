@@ -207,3 +207,7 @@ tmp*
 temp*
 *.temp
 *~
+
+# Dev Folder
+
+/Dev Files/
