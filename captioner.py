@@ -1178,6 +1178,12 @@ class SubtitleApp:
             if buffer_duration >= self.MIN_SPEECH_LENGTH:
                 print(f"🔄 [SMART] Processing final speech buffer: {buffer_duration:.1f}s")
                 self.audio_task_queue.put(self.speech_buffer.copy())
+            else:
+                print(f"🧹 [SMART] Clearing final speech buffer below threshold: {buffer_duration:.1f}s")
+            # Reset speech tracking to avoid replaying residual audio on the next session
+            self.speech_buffer = []
+            self.silence_start_time = None
+            self.last_speech_time = 0
         
         # Clean up audio stream
         stream.stop_stream()
