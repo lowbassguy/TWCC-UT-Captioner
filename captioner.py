@@ -640,7 +640,7 @@ class SubtitleApp:
         # Language selection dropdown
         ttk.Label(control_frame, text="Output Language:").grid(row=0, column=0, padx=5)
         self.language_menu = ttk.Combobox(control_frame, textvariable=self.selected_language, 
-                                         values=self.get_language_menu_list(), width=35)
+                                         values=self.get_language_menu_list(), width=35, state="readonly")
         self.language_menu.grid(row=0, column=1, padx=5)
         self.language_menu.bind('<<ComboboxSelected>>', self.on_language_changed)
         
@@ -1367,9 +1367,15 @@ class SubtitleApp:
         if len(self.recent_translations) > self.max_recent_translations:
             self.recent_translations.pop(0)  # Remove oldest
             
-        # Get target language code
-        target_lang = self.languages[self.selected_language.get()]
-        print(f"🌐 [TRANSLATE] Formatting/translating to {self.selected_language.get()} ({target_lang})")
+        # Get target language code with validation
+        selected_language = self.selected_language.get()
+        target_lang = self.languages.get(selected_language)
+        if not target_lang:
+            fallback_language = "English"
+            target_lang = self.languages.get(fallback_language, "en")
+            print(f"⚠️ [TRANSLATE] Unknown language selection '{selected_language}', defaulting to {fallback_language}.")
+            selected_language = fallback_language
+        print(f"🌐 [TRANSLATE] Formatting/translating to {selected_language} ({target_lang})")
         
         try:
             # Create prompt based on target language
@@ -1378,7 +1384,7 @@ class SubtitleApp:
                 prompt = f"Format the following transcribed text with proper capitalization, punctuation, and spelling corrections. Keep the meaning exactly the same:\n\n{text}"
             else:
                 # Other languages: format and translate
-                prompt = f"Format the following transcribed text with proper capitalization, punctuation, and spelling corrections, then translate it to {self.selected_language.get()}. Use informal, conversational language appropriate for live streaming. Return only the translated text, nothing else:\n\n{text}"
+                prompt = f"Format the following transcribed text with proper capitalization, punctuation, and spelling corrections, then translate it to {selected_language}. Use informal, conversational language appropriate for live streaming. Return only the translated text, nothing else:\n\n{text}"
             
             print(f"📤 [TRANSLATE] Prompt sent to OpenAI: {prompt[:100]}{'...' if len(prompt)>100 else ''}")
             
