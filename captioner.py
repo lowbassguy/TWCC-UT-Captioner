@@ -1076,26 +1076,40 @@ class SubtitleApp:
         self.record_thread.start()
 
     def stop_recording(self):
-        """
-        Stop the audio recording and processing pipeline.
-        
-        Process:
-        1. Set recording flag to False (signals recording thread to stop)
-        2. Generate end-of-session report
-        3. Update UI state (button text, status message)
-        
-        The recording thread will finish its current chunk and then exit.
-        """
+        """Stop the audio recording and processing pipeline."""
         print("⏹️ [RECORD] Stop recording pressed")
         self.is_recording = False
-        
-        # Record session end time and generate report
+
+        # Wait for the recording thread to finish capturing audio
+        record_thread = getattr(self, "record_thread", None)
+        if record_thread and record_thread.is_alive():
+            print("⏳ [RECORD] Waiting for recording thread to finish...")
+            record_thread.join()
+            print("✅ [RECORD] Recording thread finished")
+        self.record_thread = None
+
+        # Ensure any queued audio/translation work completes before reporting
+        self.wait_for_processing_completion()
+
+        # Record session end time after all processing is complete
         self.session_end_time = time.time()
         print(f"📊 [SESSION] Session ended at {time.strftime('%Y-%m-%d %H:%M:%S')}")
         self.generate_session_report()
-        
+
         self.record_button.configure(text="Start Recording")
         self.text_label.configure(text="")  # Clear overlay for clean stream appearance
+
+    def wait_for_processing_completion(self):
+        """Wait for background audio and translation tasks to finish."""
+        print("⏳ [SESSION] Waiting for background processing to finish...")
+        try:
+            self.audio_task_queue.join()
+            self.translation_task_queue.join()
+        except Exception as e:
+            print(f"❗ [SESSION] Error while waiting for processing: {e}")
+        else:
+            print("✅ [SESSION] Background processing completed")
+
 
     def record_loop(self):
         """
@@ -1190,6 +1204,15 @@ class SubtitleApp:
         stream.close()
         print("🛑 [RECORD] Smart recording stopped.")
 
+    def _audio_processing_done(self, future):
+        """Callback to mark audio queue tasks complete and surface errors."""
+        try:
+            future.result()
+        except Exception as e:
+            print(f"❗ [AUDIO] Error in background audio task: {e}")
+        finally:
+            self.audio_task_queue.task_done()
+
     def audio_worker(self):
         """
         Audio processing worker thread.
@@ -1207,14 +1230,20 @@ class SubtitleApp:
         while True:
             # Wait for audio chunk from recording thread
             frames = self.audio_task_queue.get()
-            
+
             if frames is None:  # Shutdown signal
                 print("🛑 [AUDIO] Audio worker thread exiting")
+                self.audio_task_queue.task_done()
                 break
-            
+
             print("🛠️ [AUDIO] Processing frames from queue")
             # Submit to thread pool for processing
-            self.audio_executor.submit(self.process_audio, frames)
+            try:
+                future = self.audio_executor.submit(self.process_audio, frames)
+                future.add_done_callback(self._audio_processing_done)
+            except Exception as e:
+                print(f"❌ [AUDIO] Failed to submit audio task: {e}")
+                self.audio_task_queue.task_done()
 
     def process_audio(self, frames):
         """
@@ -1316,21 +1345,25 @@ class SubtitleApp:
         while True:
             # Wait for text from audio processing
             text = self.translation_task_queue.get()
-            
+
             if text is None:  # Shutdown signal
                 print("🛑 [TRANSLATE] Translation worker exiting")
+                self.translation_task_queue.task_done()
                 break
-            
-            print(f"🌐 [TRANSLATE] Processing text for translation: '{text}'")
-            
-            # Process text through OpenAI
-            translated = self.format_and_translate_sync(text)
-            
-            if translated:
-                print(f"📬 [TRANSLATE] Putting translated text in UI queue: '{translated}'")
-                self.text_queue.put(translated)  # Send to UI for display
-            else:
-                print("😿 [TRANSLATE] No translated text returned")
+
+            try:
+                print(f"🌐 [TRANSLATE] Processing text for translation: '{text}'")
+
+                # Process text through OpenAI
+                translated = self.format_and_translate_sync(text)
+
+                if translated:
+                    print(f"📬 [TRANSLATE] Putting translated text in UI queue: '{translated}'")
+                    self.text_queue.put(translated)  # Send to UI for display
+                else:
+                    print("😿 [TRANSLATE] No translated text returned")
+            finally:
+                self.translation_task_queue.task_done()
 
     def format_and_translate_sync(self, text):
         """

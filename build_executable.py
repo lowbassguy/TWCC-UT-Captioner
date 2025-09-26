@@ -9,22 +9,46 @@ import sys
 import os
 import shutil
 from pathlib import Path
+from textwrap import dedent
 
 def install_build_dependencies():
-    """Install PyInstaller if not already installed."""
+    """Install PyInstaller and application requirements before building."""
+    pip_cmd = [sys.executable, "-m", "pip"]
+    requirements_path = Path("requirements.txt")
+
     print("🔧 Installing build dependencies...")
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pyinstaller"])
+    try:
+        if requirements_path.exists():
+            print(f"📦 Installing application requirements from {requirements_path}...")
+            subprocess.check_call(pip_cmd + ["install", "-r", str(requirements_path)])
+        else:
+            print("⚠️ requirements.txt not found. Installing core build dependencies individually...")
+            subprocess.check_call(pip_cmd + ["install", "openai-whisper", "numpy", "pyaudio", "cryptography"])
+
+        subprocess.check_call(pip_cmd + ["install", "pyinstaller"])
+    except subprocess.CalledProcessError as install_error:
+        print(f"❌ Failed to install build dependencies: {install_error}")
+        sys.exit(1)
+
+    # Verify whisper is available after installation
+    try:
+        import whisper  # noqa: F401
+    except ImportError:
+        print("❌ Could not import 'whisper' after installation. Please verify your Python environment.")
+        sys.exit(1)
+
     print("✅ Build dependencies installed!")
 
 def create_spec_file():
     """Create a PyInstaller spec file with custom configuration."""
 
-    # Dynamically locate the whisper assets directory to make the build portable
     try:
         import whisper
-        whisper_path = Path(whisper.__file__).parent
-        assets_path = str(whisper_path / 'assets').replace('\\', '\\\\')
-        print(f"✅ Found whisper assets at: {assets_path}")
+        whisper_assets = Path(whisper.__file__).resolve().parent / 'assets'
+        if whisper_assets.exists():
+            print(f"✅ Found whisper assets at: {whisper_assets}")
+        else:
+            print(f"⚠️ Whisper assets directory expected at {whisper_assets} but was not found. Continuing without bundling data.")
     except ImportError:
         print("❌ Could not import whisper. Please ensure 'openai-whisper' is installed via requirements.txt.")
         sys.exit(1)
@@ -32,19 +56,41 @@ def create_spec_file():
         print(f"❌ Error locating whisper assets: {e}")
         sys.exit(1)
 
-    spec_content = """
-# -*- mode: python ; coding: utf-8 -*-
+    spec_content = dedent("""# -*- mode: python ; coding: utf-8 -*-
 
 block_cipher = None
+
+import os
+from pathlib import Path
+import importlib.util
+
+
+def locate_whisper_assets():
+    '''Locate the whisper assets directory dynamically to avoid machine-specific paths.'''
+    spec = importlib.util.find_spec('whisper')
+    if not spec or not spec.origin:
+        print('[SPEC] Whisper package not found; assets will not be bundled.')
+        return None
+
+    assets_path = Path(spec.origin).resolve().parent / 'assets'
+    if assets_path.exists():
+        return assets_path
+
+    print(f"[SPEC] Whisper assets directory not found at {assets_path}.")
+    return None
+
+
+whisper_assets_path = locate_whisper_assets()
+whisper_datas = []
+if whisper_assets_path:
+    whisper_datas.append((str(whisper_assets_path), 'whisper/assets'))
+
 
 a = Analysis(
     ['captioner.py'],
     pathex=[],
     binaries=[],
-    datas=[
-        # Include Whisper's data files - CRITICAL FIX
-        ('C:\\\\Users\\\\basss\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\Lib\\\\site-packages\\\\whisper\\\\assets', 'whisper/assets'),
-    ],
+    datas=whisper_datas,
     hiddenimports=[
         'whisper',
         'openai', 
@@ -124,16 +170,12 @@ exe = EXE(
     icon='icon.ico' if os.path.exists('icon.ico') else None,
     version='version_info.txt' if os.path.exists('version_info.txt') else None,
 )
-"""
-    
-    # Replace the hardcoded path with the dynamically found one
-    hardcoded_path_str = "('C:\\\\Users\\\\basss\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python312\\\\Lib\\\\site-packages\\\\whisper\\\\assets', 'whisper/assets')"
-    dynamic_path_str = f"('{assets_path}', 'whisper/assets')"
-    spec_content = spec_content.replace(hardcoded_path_str, dynamic_path_str)
+""")
 
-    with open('captioner.spec', 'w') as f:
+    with open('captioner.spec', 'w', encoding='utf-8') as f:
         f.write(spec_content)
     print("✅ Created PyInstaller spec file!")
+
 
 def build_executable():
     """Build the executable using PyInstaller."""
