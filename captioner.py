@@ -449,7 +449,7 @@ class SubtitleApp:
         
         # Thread-safe queues for inter-thread communication
         self.text_queue = queue.Queue()  # UI updates (processed text to display)
-        self.audio_task_queue = queue.Queue()  # Audio chunks for processing
+        self.audio_task_queue = queue.Queue(maxsize=10)  # Audio chunks for processing (limited to prevent unbounded growth)
         self.translation_task_queue = queue.Queue()  # Text for translation
         
         # Application state
@@ -1076,39 +1076,127 @@ class SubtitleApp:
         self.record_thread.start()
 
     def stop_recording(self):
-        """Stop the audio recording and processing pipeline."""
+        """
+        Stop the audio recording and processing pipeline.
+
+        This method is non-blocking and provides immediate UI feedback.
+        The actual queue drainage and cleanup happens in a background thread
+        to prevent UI freezing during shutdown.
+        """
         print("⏹️ [RECORD] Stop recording pressed")
+
+        # Immediately stop recording to prevent new audio from being queued
         self.is_recording = False
 
-        # Wait for the recording thread to finish capturing audio
-        record_thread = getattr(self, "record_thread", None)
-        if record_thread and record_thread.is_alive():
-            print("⏳ [RECORD] Waiting for recording thread to finish...")
-            record_thread.join()
-            print("✅ [RECORD] Recording thread finished")
+        # Provide immediate UI feedback
+        self.record_button.configure(text="Stopping...")
+        self.record_button.configure(state="disabled")  # Prevent multiple clicks
+
+        # Clear the record thread reference
         self.record_thread = None
 
-        # Ensure any queued audio/translation work completes before reporting
-        self.wait_for_processing_completion()
+        # Start background shutdown worker thread (non-blocking)
+        shutdown_thread = threading.Thread(target=self.shutdown_worker, daemon=True)
+        shutdown_thread.start()
+        print("🚀 [RECORD] Background shutdown started, UI remains responsive")
 
-        # Record session end time after all processing is complete
-        self.session_end_time = time.time()
-        print(f"📊 [SESSION] Session ended at {time.strftime('%Y-%m-%d %H:%M:%S')}")
-        self.generate_session_report()
+    def wait_for_processing_completion(self, timeout=30):
+        """
+        Wait for background audio and translation tasks to finish with timeout.
 
-        self.record_button.configure(text="Start Recording")
-        self.text_label.configure(text="")  # Clear overlay for clean stream appearance
+        Args:
+            timeout: Maximum time to wait in seconds (default 30)
 
-    def wait_for_processing_completion(self):
-        """Wait for background audio and translation tasks to finish."""
+        Returns:
+            bool: True if all tasks completed, False if timeout occurred
+        """
         print("⏳ [SESSION] Waiting for background processing to finish...")
+
+        def wait_for_queue_with_timeout(queue_obj, queue_name, timeout_seconds):
+            """Helper to wait for a specific queue with timeout"""
+            import threading
+            completed = threading.Event()
+
+            def queue_waiter():
+                try:
+                    queue_obj.join()
+                    completed.set()
+                except Exception as e:
+                    print(f"❗ [SESSION] Error waiting for {queue_name}: {e}")
+                    completed.set()
+
+            waiter_thread = threading.Thread(target=queue_waiter, daemon=True)
+            waiter_thread.start()
+
+            if completed.wait(timeout_seconds):
+                return True
+            else:
+                print(f"⚠️ [SESSION] Timeout waiting for {queue_name} queue (continuing anyway)")
+                return False
+
         try:
-            self.audio_task_queue.join()
-            self.translation_task_queue.join()
+            # Wait for audio queue with timeout
+            audio_completed = wait_for_queue_with_timeout(self.audio_task_queue, "audio", timeout)
+
+            # Wait for translation queue with timeout
+            translation_completed = wait_for_queue_with_timeout(self.translation_task_queue, "translation", timeout)
+
+            if audio_completed and translation_completed:
+                print("✅ [SESSION] Background processing completed")
+                return True
+            else:
+                print("⚠️ [SESSION] Some queues timed out, but continuing shutdown")
+                return False
+
         except Exception as e:
             print(f"❗ [SESSION] Error while waiting for processing: {e}")
-        else:
-            print("✅ [SESSION] Background processing completed")
+            return False
+
+    def shutdown_worker(self):
+        """
+        Background worker thread to handle queue drainage during shutdown.
+
+        This prevents the UI thread from being blocked during stop operations.
+        Runs in a separate thread and updates UI when complete.
+        """
+        print("🛑 [SHUTDOWN] Starting background shutdown worker")
+
+        # Wait for recording thread to finish
+        record_thread = getattr(self, "record_thread", None)
+        if record_thread and record_thread.is_alive():
+            print("⏳ [SHUTDOWN] Waiting for recording thread to finish...")
+            record_thread.join(timeout=10)  # 10 second timeout
+            if record_thread.is_alive():
+                print("⚠️ [SHUTDOWN] Recording thread did not finish in time")
+            else:
+                print("✅ [SHUTDOWN] Recording thread finished")
+
+        # Wait for processing completion with timeout
+        processing_completed = self.wait_for_processing_completion(timeout=30)
+
+        # Schedule UI updates on the main thread
+        def finalize_shutdown():
+            print("🏁 [SHUTDOWN] Finalizing shutdown on UI thread")
+
+            # Record session end time after processing
+            self.session_end_time = time.time()
+            print(f"📊 [SESSION] Session ended at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+            # Generate session report
+            try:
+                self.generate_session_report()
+            except Exception as e:
+                print(f"❗ [SHUTDOWN] Error generating session report: {e}")
+
+            # Reset UI state
+            self.record_button.configure(text="Start Recording")
+            self.record_button.configure(state="normal")  # Re-enable button
+            self.text_label.configure(text="")  # Clear overlay for clean stream appearance
+
+            print("✅ [SHUTDOWN] Shutdown complete")
+
+        # Schedule the finalization on the UI thread
+        self.root.after(0, finalize_shutdown)
 
 
     def record_loop(self):
@@ -1153,7 +1241,7 @@ class SubtitleApp:
                 buffer_duration = len(self.speech_buffer) * self.CHUNK / self.RATE
                 if buffer_duration > 10.0:  # Process if more than 10 seconds of continuous speech
                     print(f"⚠️ [SMART] Buffer too long ({buffer_duration:.1f}s), processing to avoid missing content")
-                    self.audio_task_queue.put(self.speech_buffer.copy())
+                    self.safe_queue_audio(self.speech_buffer.copy())
                     self.speech_buffer = []
                 else:
                     print(f"🎤 [SMART] Speech detected, buffer size: {len(self.speech_buffer)} chunks ({buffer_duration:.1f}s)")
@@ -1175,9 +1263,9 @@ class SubtitleApp:
                         self.speech_buffer):
                         
                         print(f"✅ [SMART] Processing complete speech: {buffer_duration:.1f}s after {silence_duration:.1f}s silence")
-                        
+
                         # Process the accumulated speech
-                        self.audio_task_queue.put(self.speech_buffer.copy())
+                        self.safe_queue_audio(self.speech_buffer.copy())
                         
                         # Clear buffer for next speech
                         self.speech_buffer = []
@@ -1191,7 +1279,7 @@ class SubtitleApp:
             buffer_duration = len(self.speech_buffer) * self.CHUNK / self.RATE
             if buffer_duration >= self.MIN_SPEECH_LENGTH:
                 print(f"🔄 [SMART] Processing final speech buffer: {buffer_duration:.1f}s")
-                self.audio_task_queue.put(self.speech_buffer.copy())
+                self.safe_queue_audio(self.speech_buffer.copy())
             else:
                 print(f"🧹 [SMART] Clearing final speech buffer below threshold: {buffer_duration:.1f}s")
             # Reset speech tracking to avoid replaying residual audio on the next session
@@ -1212,6 +1300,36 @@ class SubtitleApp:
             print(f"❗ [AUDIO] Error in background audio task: {e}")
         finally:
             self.audio_task_queue.task_done()
+
+    def safe_queue_audio(self, audio_frames):
+        """
+        Safely add audio frames to the processing queue with overflow handling.
+
+        If the queue is full, drops the oldest item to make room for new audio.
+        This prevents unbounded queue growth during long recording sessions.
+
+        Args:
+            audio_frames: Audio data to be processed
+        """
+        try:
+            # Try to add to queue without blocking
+            self.audio_task_queue.put_nowait(audio_frames)
+            queue_size = self.audio_task_queue.qsize()
+            print(f"📬 [QUEUE] Added audio to queue (size: {queue_size}/10)")
+        except queue.Full:
+            # Queue is full - drop oldest item to make room
+            try:
+                dropped_frames = self.audio_task_queue.get_nowait()
+                print("⚠️ [QUEUE] Queue full, dropping oldest audio chunk to prevent backlog")
+                self.audio_task_queue.task_done()
+                # Now add the new frames
+                self.audio_task_queue.put_nowait(audio_frames)
+                queue_size = self.audio_task_queue.qsize()
+                print(f"📬 [QUEUE] Added new audio after dropping old (size: {queue_size}/10)")
+            except queue.Empty:
+                # Rare race condition - queue became empty between full check and get
+                self.audio_task_queue.put_nowait(audio_frames)
+                print("📬 [QUEUE] Added audio to previously full queue")
 
     def audio_worker(self):
         """
@@ -1236,7 +1354,8 @@ class SubtitleApp:
                 self.audio_task_queue.task_done()
                 break
 
-            print("🛠️ [AUDIO] Processing frames from queue")
+            queue_size = self.audio_task_queue.qsize()
+            print(f"🛠️ [AUDIO] Processing frames from queue (remaining: {queue_size}/10)")
             # Submit to thread pool for processing
             try:
                 future = self.audio_executor.submit(self.process_audio, frames)
